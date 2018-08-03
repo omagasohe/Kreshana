@@ -8,8 +8,6 @@
 *  CircleMUD is based on DikuMUD, Copyright (C) 1990, 1991.               *
 **************************************************************************/
 
-#define __FIGHT_C__
-
 #include "conf.h"
 #include "sysdep.h"
 #include "structs.h"
@@ -119,7 +117,8 @@ void check_killer(struct char_data *ch, struct char_data *vict)
 
   SET_BIT_AR(PLR_FLAGS(ch), PLR_KILLER);
   send_to_char(ch, "If you want to be a PLAYER KILLER, so be it...\r\n");
-  mudlog(BRF, LVL_IMMORT, TRUE, "PC Killer bit set on %s for initiating attack on %s at %s.",
+  mudlog(BRF, MAX(LVL_IMMORT, MAX(GET_INVIS_LEV(ch), GET_INVIS_LEV(vict))), 
+    TRUE, "PC Killer bit set on %s for initiating attack on %s at %s.",
     GET_NAME(ch), GET_NAME(vict), world[IN_ROOM(vict)].name);
 }
 
@@ -253,6 +252,8 @@ void death_cry(struct char_data *ch)
 
 void raw_kill(struct char_data * ch, struct char_data * killer)
 {
+struct char_data *i;
+
   if (FIGHTING(ch))
     stop_fighting(ch);
 
@@ -268,8 +269,14 @@ void raw_kill(struct char_data * ch, struct char_data * killer)
   } else
     death_cry(ch);
 
-  if (killer)
-    autoquest_trigger_check(killer, ch, NULL, AQ_MOB_KILL);
+  if (killer) {
+    if (killer->group) {
+      while ((i = (struct char_data *) simple_list(killer->group->members)) != NULL)
+        if(IN_ROOM(i) == IN_ROOM(ch)  || (world[IN_ROOM(i)].zone == world[IN_ROOM(ch)].zone))
+          autoquest_trigger_check(i, ch, NULL, AQ_MOB_KILL);      
+    } else
+        autoquest_trigger_check(killer, ch, NULL, AQ_MOB_KILL);
+  }
 
   /* Alert Group if Applicable */
   if (GROUP(ch))
@@ -737,7 +744,8 @@ int damage(struct char_data *ch, struct char_data *victim, int dam, int attackty
     }
 
     if (!IS_NPC(victim)) {
-      mudlog(BRF, LVL_IMMORT, TRUE, "%s killed by %s at %s", GET_NAME(victim), GET_NAME(ch), world[IN_ROOM(victim)].name);
+      mudlog(BRF, MAX(LVL_IMMORT, MAX(GET_INVIS_LEV(ch), GET_INVIS_LEV(victim))), 
+        TRUE, "%s killed by %s at %s", GET_NAME(victim), GET_NAME(ch), world[IN_ROOM(victim)].name);
       if (MOB_FLAGGED(ch, MOB_MEMORY))
 	forget(ch, victim);
     }
@@ -924,8 +932,11 @@ void perform_violence(void)
       continue;
     }
 
-    if (GROUP(ch)) {
-      while ((tch = (struct char_data *) simple_list(GROUP(ch)->members)) != NULL) {
+ if (GROUP(ch) && GROUP(ch)->members && GROUP(ch)->members->iSize) {
+      struct iterator_data Iterator;
+
+      tch = (struct char_data *) merge_iterator(&Iterator, GROUP(ch)->members);
+    for (; tch ; tch = next_in_list(&Iterator)) {
         if (tch == ch)
           continue;
         if (!IS_NPC(tch) && !PRF_FLAGGED(tch, PRF_AUTOASSIST))

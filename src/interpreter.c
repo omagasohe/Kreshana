@@ -8,8 +8,6 @@
 *  CircleMUD is based on DikuMUD, Copyright (C) 1990, 1991.               *
 **************************************************************************/
 
-#define __INTERPRETER_C__
-
 #include "conf.h"
 #include "sysdep.h"
 #include "structs.h"
@@ -105,6 +103,7 @@ cpp_extern const struct command_info cmd_info[] = {
 
   { "backstab" , "ba"      , POS_STANDING, do_backstab , 1, 0 },
   { "ban"      , "ban"     , POS_DEAD    , do_ban      , LVL_GRGOD, 0 },
+  { "bandage"  , "band"    , POS_RESTING , do_bandage  , 1, 0 },
   { "balance"  , "bal"     , POS_STANDING, do_not_here , 1, 0 },
   { "bash"     , "bas"     , POS_FIGHTING, do_bash     , 1, 0 },
   { "brief"    , "br"      , POS_DEAD    , do_gen_tog  , 0, SCMD_BRIEF },
@@ -325,6 +324,7 @@ cpp_extern const struct command_info cmd_info[] = {
   { "unlock"   , "unlock"  , POS_SITTING , do_gen_door , 0, SCMD_UNLOCK },
   { "unban"    , "unban"   , POS_DEAD    , do_unban    , LVL_GRGOD, 0 },
   { "unaffect" , "unaffect", POS_DEAD    , do_wizutil  , LVL_GOD, SCMD_UNAFFECT },
+  { "unfollow" , "unf"     , POS_RESTING , do_unfollow , 0, 0 },
   { "uptime"   , "uptime"  , POS_DEAD    , do_date     , LVL_GOD, SCMD_UPTIME },
   { "use"      , "use"     , POS_SITTING , do_use      , 1, SCMD_USE },
   { "users"    , "users"   , POS_DEAD    , do_users    , LVL_GOD, 0 },
@@ -349,12 +349,13 @@ cpp_extern const struct command_info cmd_info[] = {
   { "withdraw" , "withdraw", POS_STANDING, do_not_here , 1, 0 },
   { "wiznet"   , "wiz"     , POS_DEAD    , do_wiznet   , LVL_IMMORT, 0 },
   { ";"        , ";"       , POS_DEAD    , do_wiznet   , LVL_IMMORT, 0 },
-  { "wizhelp"  , "wizhelp" , POS_SLEEPING, do_commands , LVL_IMMORT, SCMD_WIZHELP },
+  { "wizhelp"  , "wizhelp" , POS_DEAD    , do_wizhelp  , LVL_IMMORT, 0 },
   { "wizlist"  , "wizlist" , POS_DEAD    , do_gen_ps   , 0, SCMD_WIZLIST },
   { "wizupdate", "wizupde" , POS_DEAD    , do_wizupdate, LVL_GRGOD, 0 },
   { "wizlock"  , "wizlock" , POS_DEAD    , do_wizlock  , LVL_IMPL, 0 },
   { "write"    , "write"   , POS_STANDING, do_write    , 1, 0 },
 
+  { "zoneresets", "zoner" ,  POS_DEAD    , do_gen_tog , LVL_IMPL, SCMD_ZONERESETS },
   { "zreset"   , "zreset"  , POS_DEAD    , do_zreset   , LVL_BUILDER, 0 },
   { "zedit"    , "zedit"   , POS_DEAD    , do_oasis_zedit, LVL_BUILDER, 0 },
   { "zlist"    , "zlist"   , POS_DEAD    , do_oasis_list, LVL_BUILDER, SCMD_OASIS_ZLIST },
@@ -368,7 +369,7 @@ cpp_extern const struct command_info cmd_info[] = {
 
   /* Thanks to Melzaren for this change to allow DG Scripts to be attachable
    *to player's while still disallowing them to manually use the DG-Commands. */
-  const struct mob_script_command_t mob_script_commands[] = {
+static const struct mob_script_command_t mob_script_commands[] = {
 
   /* DG trigger commands. minimum_level should be set to -1. */
   { "masound"  , do_masound  , 0 },
@@ -392,6 +393,7 @@ cpp_extern const struct command_info cmd_info[] = {
   { "mtransform", do_mtransform , 0 },
   { "mzoneecho", do_mzoneecho, 0 },
   { "mfollow"  , do_mfollow  , 0 },
+  { "mlog"     , do_mlog     , 0 },
   { "\n" , do_not_here , 0 } };
 
 int script_command_interpreter(struct char_data *ch, char *arg) {
@@ -420,7 +422,7 @@ int script_command_interpreter(struct char_data *ch, char *arg) {
   return 1; // We took care of execution. Let caller know.
 }
 
-const char *fill[] =
+static const char *fill[] =
 {
   "in",
   "from",
@@ -432,7 +434,7 @@ const char *fill[] =
   "\n"
 };
 
-const char *reserved[] =
+static const char *reserved[] =
 {
   "a",
   "an",
@@ -1147,7 +1149,7 @@ static int perform_dupe_check(struct descriptor_data *d)
   case RECON:
     write_to_output(d, "Reconnecting.\r\n");
     act("$n has reconnected.", TRUE, d->character, 0, 0, TO_ROOM);
-    mudlog(NRM, MAX(0, GET_INVIS_LEV(d->character)), TRUE, "%s [%s] has reconnected.", GET_NAME(d->character), d->host);
+    mudlog(NRM, MAX(LVL_IMMORT, GET_INVIS_LEV(d->character)), TRUE, "%s [%s] has reconnected.", GET_NAME(d->character), d->host);
     if (has_mail(GET_IDNUM(d->character)))
       write_to_output(d, "You have mail waiting.\r\n");
     break;
@@ -1252,9 +1254,9 @@ int enter_player_game (struct descriptor_data *d)
     load_room = r_frozen_start_room;
 
   /* copyover */
-  GET_ID(d->character) = GET_IDNUM(d->character);
+  d->character->script_id = GET_IDNUM(d->character);
   /* find_char helper */
-  add_to_lookup_table(GET_ID(d->character), (void *)d->character);
+  add_to_lookup_table(d->character->script_id, (void *)d->character);
 
   /* After moving saving of variables to the player file, this should only
    * be called in case nothing was found in the pfile. If something was
@@ -1304,7 +1306,7 @@ EVENTFUNC(get_protocols)
  
   len += snprintf(buf + len, MAX_STRING_LENGTH - len,   "\tO[\toMXP\tO] \tw%s\tn | ", d->pProtocol->bMXP ? "Yes" : "No");
   len += snprintf(buf + len, MAX_STRING_LENGTH - len,   "\tO[\toMSDP\tO] \tw%s\tn | ", d->pProtocol->bMSDP ? "Yes" : "No");
-  len += snprintf(buf + len, MAX_STRING_LENGTH - len,   "\tO[\toATCP\tO] \tw%s\tn\r\n\r\n", d->pProtocol->bATCP ? "Yes" : "No");
+  snprintf(buf + len, MAX_STRING_LENGTH - len,   "\tO[\toATCP\tO] \tw%s\tn\r\n\r\n", d->pProtocol->bATCP ? "Yes" : "No");
    
   write_to_output(d, buf, 0);
     
@@ -1774,7 +1776,8 @@ void nanny(struct descriptor_data *d, char *arg)
 
       delete_variables(GET_NAME(d->character));
       write_to_output(d, "Character '%s' deleted! Goodbye.\r\n", GET_NAME(d->character));
-      mudlog(NRM, LVL_GOD, TRUE, "%s (lev %d) has self-deleted.", GET_NAME(d->character), GET_LEVEL(d->character));
+      mudlog(NRM, MAX(LVL_GOD, GET_INVIS_LEV(d->character)), TRUE, "%s (lev %d) has self-deleted.",
+       GET_NAME(d->character), GET_LEVEL(d->character));
       STATE(d) = CON_CLOSE;
       return;
     } else {

@@ -278,7 +278,7 @@ int sprintascii(char *out, bitvector_t bits)
 }
 
 /* converts illegal filename chars into appropriate equivalents */ 
-char *fix_filename(char *str) 
+static char *fix_filename(char *str) 
 { 
   static char good_file_name[MAX_STRING_LENGTH]; 
   char *cindex = good_file_name; 
@@ -366,13 +366,13 @@ ACMD(do_export_zone)
   f = fix_filename(zone_name); 
 
   /* Remove the old copy. */ 
-  sprintf(sysbuf, "rm %s%s.tar.gz", path, f); 
+  snprintf(sysbuf, MAX_INPUT_LENGTH, "rm %s%s.tar.gz", path, f);
 
   /* Tar the new copy. */ 
-   sprintf(sysbuf, "tar -cf %s%s.tar %sqq.info %sqq.wld %sqq.zon %sqq.mob %sqq.obj %sqq.trg %sqq.shp", path, f, path, path, path, path, path, path, path);
+  snprintf(sysbuf, MAX_INPUT_LENGTH, "tar -cf %s%s.tar %sqq.info %sqq.wld %sqq.zon %sqq.mob %sqq.obj %sqq.trg %sqq.shp", path, f, path, path, path, path, path, path, path);
 
   /* Gzip it. */ 
-  sprintf(sysbuf, "gzip %s%s.tar", path, f); 
+  snprintf(sysbuf, MAX_INPUT_LENGTH, "gzip %s%s.tar", path, f);
 
   send_to_char(ch, "Files tar'ed to \"%s%s.tar.gz\"\r\n", path, f); 
 }
@@ -945,7 +945,8 @@ static int export_save_rooms(zone_rnum zrnum)
         struct extra_descr_data *xdesc;
 
 	for (xdesc = room->ex_description; xdesc; xdesc = xdesc->next) {
-	  strncpy(buf, xdesc->description, sizeof(buf));
+	  strncpy(buf, xdesc->description, sizeof(buf) - 1);
+	  buf[sizeof(buf) - 1] = '\0';
 	  strip_cr(buf);
 	  fprintf(room_file,	"E\n"
 			"%s~\n"

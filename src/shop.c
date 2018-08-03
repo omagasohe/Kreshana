@@ -9,8 +9,6 @@
 *  By Jeff Fink.                                                          *
 **************************************************************************/
 
-#define __SHOP_C__
-
 #include "conf.h"
 #include "sysdep.h"
 #include "structs.h"
@@ -465,8 +463,8 @@ static int buy_price(struct obj_data *obj, int shop_nr, struct char_data *keeper
    we don't buy for more than we sell for, to prevent infinite money-making. */
 static int sell_price(struct obj_data *obj, int shop_nr, struct char_data *keeper, struct char_data *seller)
 {
-  float sell_cost_modifier = SHOP_SELLPROFIT(shop_nr) * (1 - (GET_CHA(keeper) - GET_CHA(seller)) / (float)70);
-  float buy_cost_modifier = SHOP_BUYPROFIT(shop_nr) * (1 + (GET_CHA(keeper) - GET_CHA(seller)) / (float)70);
+  float sell_cost_modifier = SHOP_SELLPROFIT(shop_nr) * (1 - (GET_CHA(keeper) - GET_CHA(seller)) / 70.0);
+  float buy_cost_modifier = SHOP_BUYPROFIT(shop_nr) * (1 + (GET_CHA(keeper) - GET_CHA(seller)) / 70.0);
 
   if (sell_cost_modifier > buy_cost_modifier)
     sell_cost_modifier = buy_cost_modifier;
@@ -1085,13 +1083,20 @@ static int read_type_list(FILE *shop_f, struct shop_buy_data *list,
 		       int new_format, int max)
 {
   int tindex, num, len = 0, error = 0;
-  char *ptr, buf[MAX_STRING_LENGTH], *buf1;
+  char *ptr, buf[MAX_STRING_LENGTH];
 
   if (!new_format)
     return (read_list(shop_f, list, 0, max, LIST_TRADE));
 
   do {
-    buf1 = fgets(buf, sizeof(buf), shop_f);
+    if (fgets(buf, sizeof(buf), shop_f) == NULL) {
+      if (feof(shop_f))
+        log("SYSERR: unexpected end of file reading shop file type list.");
+      else if (ferror(shop_f))
+        log("SYSERR: error reading reading shop file type list: %s", strerror(errno));
+      else
+        log("SYSERR: error reading reading shop file type list.");
+    }
     if ((ptr = strchr(buf, ';')) != NULL)
       *ptr = '\0';
     else
@@ -1103,7 +1108,7 @@ static int read_type_list(FILE *shop_f, struct shop_buy_data *list,
       for (tindex = 0; *item_types[tindex] != '\n'; tindex++)
         if (!strn_cmp(item_types[tindex], buf, strlen(item_types[tindex]))) {
           num = tindex;
-          strcpy(buf, buf + strlen(item_types[tindex]));	/* strcpy: OK (always smaller) */
+          memmove(buf, buf + strlen(item_types[tindex]), strlen(buf) - strlen(item_types[tindex]) + 1);
           break;
         }
 
